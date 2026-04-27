@@ -1,0 +1,10 @@
+{%- set id = grains['id'] -%}
+{%- set cluster_name = pillar['hostnames'][id]['cluster'] -%}
+kind: KubeProxyConfiguration
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+clientConnection:
+  kubeconfig: "/var/lib/kubernetes/kube-proxy.kubeconfig"
+mode: "iptables"
+clusterCIDR: "{{ pillar['clusters'][cluster_name]['pod_cidr'] }}"
+ipvs:
+    strictARP: true

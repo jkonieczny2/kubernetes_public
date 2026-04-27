@@ -1,0 +1,53 @@
+This is a repo containing salt states for cloud and other resources
+
+#### STATES ####
+
+- Do not commit tarballs / binaries to this repo.  Instead use archive.extract to download.
+    - Note that you can also download binaries to S3 and hit their http endpoint, but this is an optimization detail
+
+#### COMMANDS ####
+
+- Can shut down instances in a group using:
+    - salt-ssh <ids> system.shutdown
+
+- To highstate:
+    - salt-ssh <ids> state.highstate
+
+- To apply a specific state:
+    - salt-ssh <ids> state.apply <state_name>
+
+#### CONTAINERD ####
+
+- 'ctr' is containerd CLI
+    - List running containers
+        - ctr tasks list
+
+
+#### SSH ####
+
+- first need to generate gpg key in my local salt config dir
+    - this will allow us to encrypt ssh keys before committing them to salt repo
+- then need to encrypt ssh keys using gpg
+- then need to place encrypted ssh keys into pillar file
+- note when getting pillar keys we skip the file, so pillar('aws_default_key') not pillar('secrets:aws_default_key')
+- salt will automatically use gpg key to decrypt before shipping to minions
+
+#### PILLAR ####
+
+- to gpg-encrypt a secret:
+    - echo "foobar" | gpg --homedir . --encrypt --armor --recipient "<username>"
+
+#### KUBEADM JOIN #####
+
+- if we want to add a node to the cluster, we need to generate a token on the control plane node:
+    - kubeadm token create --print-join-command
+- then we need to join on the worker node:
+    - kubeadm join 10.0.0.12:6443 --token <redacted> --discovery-token-ca-cert-hash <redacted>
+- note also the kubelet service unit on the worker nodes:
+    - ExecStart=/usr/local/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --config=/var/lib/kubelet/config.yaml --cgroup-driver=systemd
+
+#### REMOVE NODES FROM CLUSTER
+
+kubectl cordon <node>
+kubectl drain <node> --ignore-daemonsets --force
+kubectl delete node <node>

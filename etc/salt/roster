@@ -1,0 +1,8 @@
+k8s-master-1:
+    host: 0.0.0.0
+
+k8s-worker-2:
+    host: 0.0.0.0
+
+k8s-worker-3:
+    host: 0.0.0.0

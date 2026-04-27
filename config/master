@@ -1,0 +1,19 @@
+file_roots:
+    base:
+        - ./srv/salt
+
+pillar_roots:
+    base:
+        - ./srv/salt/pillar
+
+ssh_log_file: <redacted>
+pki_dir: <redacted>
+cachedir: <redacted>
+
+roster_defaults:
+    priv: ~/.ssh/<redacted>
+
+gpg_keydir: <redacted>
+
+decrypt_pillar_renderers:
+    - gpg

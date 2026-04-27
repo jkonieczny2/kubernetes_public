@@ -1,0 +1,7 @@
+file_roots:
+
+    base: 
+
+        Must define paths relative to where the `salt-ssh` command is run.  In this case it will be run from wherever the Saltfile lives
+
+        The base entry tells Salt where to look for states, by default it's /etc/salt

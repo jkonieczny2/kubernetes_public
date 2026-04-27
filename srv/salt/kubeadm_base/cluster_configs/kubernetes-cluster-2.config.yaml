@@ -1,0 +1,31 @@
+{%- set id = grains['id'] -%}
+{%- set cluster_name = pillar['hostnames'][id]['cluster'] -%}
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+nodeRegistration:
+  criSocket: "/var/run/containerd/containerd.sock"
+  imagePullPolicy: "IfNotPresent"
+certificateKey: "71786f22fc0911c4b83513b7bbdc8f5c06eb5d6799397278f783888b4c913ddd"
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+networking:
+  serviceSubnet: "{{ pillar['clusters'][cluster_name]['service_cluster_ip_range'] }}"
+  podSubnet: "{{ pillar['clusters'][cluster_name]['pod_cidr'] }}"
+  dnsDomain: "cluster.local"
+kubernetesVersion: "v1.33.4"
+controllerManager:
+  extraArgs:
+    "node-cidr-mask-size": "24"
+scheduler:
+certificatesDir: "/etc/kubernetes/pki"
+imageRepository: "registry.k8s.io"
+clusterName: "{{ cluster_name }}"
+---
+# NOTE: strictARP is for metallb
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+mode: "iptables"
+clusterCIDR: "{{ pillar['clusters'][cluster_name]['pod_cidr'] }}"
+ipvs:
+  strictARP: true

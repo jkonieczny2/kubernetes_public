@@ -1,0 +1,3 @@
+salt-ssh:
+    config_dir: "./config"
+    roster_file: "./etc/salt/roster"
