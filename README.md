@@ -1,122 +1,135 @@
 # Salt states for cloud and resources
 
-This repository contains Salt states for cloud and other resources.
+> Salt formulas and pillar patterns for provisioning cloud infrastructure—primarily Debian hosts, Kubernetes (kubeadm), and SSH access via **salt-ssh**.
 
-## Layout / design
+---
 
-### Installation
+## Table of contents
 
-- `install/debian.sh` — install salt-ssh on Debian machines
+- [Layout & design](#layout--design) — install paths, roster, Salt modules  
+- [Conventions](#conventions) — state rules, pillars, GPG secrets  
+- [Salt-SSH](#salt-ssh) — one-time setup and routine commands  
+- [References](#references) — containerd CLI and Kubernetes add/remove node  
 
-### Salt configuration
+---
 
-- `config/master` — master configuration needed to make salt-ssh work
+## Layout & design
 
-### Roster
+### Repository paths
 
-- `etc/salt/roster` — defines machines in the Kubernetes cluster
+Install, master config, and roster live outside `srv/salt`:
+
+| Location | Purpose |
+|---------|---------|
+| [`install/debian.sh`](install/debian.sh) | Install **salt-ssh** on Debian machines |
+| [`config/master`](config/master) | Master configuration required for salt-ssh |
+| [`etc/salt/roster`](etc/salt/roster) | Inventories machines for the Kubernetes cluster |
+
+States live under **`srv/salt/*`** — one directory per Salt state/module.
+
+---
+
+### Salt state modules
+
+#### Active / current stack
+
+| Module | Purpose |
+|--------|---------|
+| **containerd** | Install the containerd container runtime |
+| **hosts** | Hand-written DNS for nodes (private AWS IPs) |
+| **network** | Basic network debugging tools |
+| **ssh** | SSH keys so hosts are reachable from dev machines and each other |
+| **hostname** | Set the machine hostname |
+| **kubeadm_base** | Modern control-plane: Kubernetes binaries/configs/services, cert-manager instead of manual CA wiring, avoids custom networking in favor of Flannel as deployed in-cluster |
+| **kubeadm_worker** | Modern workers: binaries, configs, and systemd units aligned with kubeadm |
+
+#### Legacy modules (keep for older clusters)
+
+| Module | Purpose | Superseded by |
+|--------|---------|---------------|
+| **k8s** | Bootstrap Kubernetes node binaries/parameters | **`kubeadm_base`** |
+| **k8s_control_plane** | Control plane TLS, CoreDNS, control-plane systemd units | **`kubeadm_base`** |
+| **k8s_worker_node** | Worker binaries, certs, systemd, network snippets | **`kubeadm_worker`** |
+| **ca_certs** | TLS material checked into Salt | **`cert-manager`** in Kubernetes |
+| **etcd** | Install etcd on the control-plane OS | etcd **inside the cluster** (typical kubeadm/stack) |
+
+---
+
+## Conventions
 
 ### Salt states
 
-`srv/salt/*` — separate directory for each Salt state:
+| Do | Detail |
+|----|--------|
+| **Prefer downloads** | Do **not** commit tarballs or binaries. Use **`archive.extract`** (or similar) to fetch artifacts at apply time |
+| **S3 shortcut** | Optional: upload binaries to S3 and point at their HTTP URLs (optimization only) |
 
-- **containerd** — install containerd Docker container runtime
-- **hosts** — hand-written DNS for nodes using private AWS IP addresses
-- **network** — basic tools for network debugging
-- **ssh** — SSH keys so that machines are reachable from local development and each other
-- **hostname** — set the machine hostname
-- **kubeadm_base** — updated control-plane Kubernetes components. Avoids manual CA certificate generation in favor of the cert-manager Kubernetes service; avoids custom network configs for the Kubernetes Flannel service. Includes basic machine configs, Kubernetes binaries, Kubernetes configurations, and systemd services.
-- **kubeadm_worker** — updated worker-node Kubernetes components. Includes Kubernetes binaries, basic machine configs, Kubernetes configs, and systemd services.
+### Salt pillar (GPG secrets)
 
-- **k8s** — basic setup for Kubernetes node machines, including Kubernetes binaries and basic machine parameters.  
-  **Note:** Deprecated in favor of `kubeadm_base`, kept for legacy older clusters.
-
-- **k8s_control_plane** — basic setup for the Kubernetes control plane, including TLS certificates, control-plane-specific configurations and systemd services, CoreDNS.  
-  **Note:** Deprecated in favor of `kubeadm_base`, kept for legacy older clusters.
-
-- **k8s_worker_node** — additional worker-specific setup: worker-specific Kubernetes binaries, configurations for worker components, systemd services, TLS certificates, and network configurations.  
-  **Note:** Deprecated in favor of `kubeadm_worker`, kept for legacy older clusters.
-
-- **ca_certs** — holds TLS certificates for machines.  
-  **Note:** Deprecated in favor of Kubernetes cert-manager.
-
-- **etcd** — state to install etcd on the control-plane node.  
-  **Note:** Deprecated in favor of running etcd inside Kubernetes.
-
-## Salt state conventions
-
-- Do not commit tarballs or binaries to this repository. Use `archive.extract` to download instead.
-  - Downloading binaries to S3 and using their HTTP endpoint is allowed as an optimization.
-
-## Salt pillar conventions
-
-To GPG-encrypt a secret:
+Encrypt a string for use in pillars:
 
 ```bash
 echo "foobar" | gpg --homedir . --encrypt --armor --recipient "<username>"
 ```
 
-## Salt-SSH setup
+| Tip | Explanation |
+|-----|---------------|
+| GPG directory | Generate/import keys **in your local Salt config** so SSH secrets can be encrypted before commit |
+| Encrypted keys | Place ciphertext in the pillar as usual; Salt decrypts with your GPG key before sending to minions |
+| Pillar key path | Use `pillar('aws_default_key')` — **not** `pillar('secrets:aws_default_key')` when the file path is skipped |
 
-1. Generate a GPG key in your local Salt config directory — this lets you encrypt SSH keys before committing them to the Salt repo.
-2. Encrypt SSH keys using GPG.
-3. Place encrypted SSH keys into the pillar file.
-4. When reading pillar keys, skip the filename path: use `pillar('aws_default_key')`, not `pillar('secrets:aws_default_key')`.
-5. Salt will use the GPG key to decrypt before shipping to minions.
+---
 
-## Salt-SSH commands
+## Salt-SSH
 
-- Shut down instances in a group:
+### Setup (once)
 
-  ```bash
-  salt-ssh <ids> system.shutdown
-  ```
+| Step | Action |
+|------|--------|
+| 1 | Generate a GPG key in your local Salt config directory |
+| 2 | Encrypt SSH private keys with GPG |
+| 3 | Store ciphertext in the appropriate pillar |
+| 4 | Reference pillars without the `secrets:` filename prefix when applicable (see table above) |
 
-- Highstate:
+Salt decrypts pillar material with your GPG key before shipping state to targets.
 
-  ```bash
-  salt-ssh <ids> state.highstate
-  ```
+### Common commands
 
-- Apply a specific state:
+| Goal | Command |
+|------|---------|
+| Power off grouped hosts | `salt-ssh <ids> system.shutdown` |
+| Full convergence | `salt-ssh <ids> state.highstate` |
+| One state/module | `salt-ssh <ids> state.apply <state_name>` |
 
-  ```bash
-  salt-ssh <ids> state.apply <state_name>
-  ```
+---
 
-## containerd reference
+## References
 
-`ctr` is the containerd CLI.
+### containerd (`ctr`)
 
-- List running containers:
+| Task | Example |
+|------|---------|
+| List running containers / tasks | `ctr tasks list` |
 
-  ```bash
-  ctr tasks list
-  ```
+### Kubernetes
 
-## Kubernetes reference
+#### Add a worker to the cluster
 
-### Add a node to the cluster
+| Step | Node | Command / detail |
+|------|------|------------------|
+| 1 | Control plane | `kubeadm token create --print-join-command` |
+| 2 | Worker | Paste the printed `kubeadm join …` (token + `--discovery-token-ca-cert-hash` from step 1) |
+| 3 | Worker kubelet unit | Typical `ExecStart`: `/usr/local/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --config=/var/lib/kubelet/config.yaml --cgroup-driver=systemd` |
 
-1. On the control-plane node, generate a join token:
+Example join (placeholder values):
 
-   ```bash
-   kubeadm token create --print-join-command
-   ```
+```bash
+kubeadm join 10.0.0.12:6443 --token <redacted> --discovery-token-ca-cert-hash <redacted>
+```
 
-2. On the worker node, join (example):
+#### Remove a node cleanly
 
-   ```bash
-   kubeadm join 10.0.0.12:6443 --token <redacted> --discovery-token-ca-cert-hash <redacted>
-   ```
-
-3. Worker kubelet unit (reference):
-
-   ```text
-   ExecStart=/usr/local/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --config=/var/lib/kubelet/config.yaml --cgroup-driver=systemd
-   ```
-
-### Remove a node from the cluster
+Run on the control plane:
 
 ```bash
 kubectl cordon <node>
